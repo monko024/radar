@@ -2,72 +2,62 @@ classdef controller < handle
     properties
         hView
         hModel
-        device      % Store the serial object here
-        range1 = 0
-        range2 = 0.6
+        device
+        currentAngle = 0
+        stepSizeDeg = 20  % Degrees to rotate per iteration
+        stepsPerDeg = 5.5 % Example: 200 steps / 360 degrees = ~0.55 (Adjust for your motor!)
     end
     
     methods
         function obj = controller()
-            % Setup Python
-            if count(py.sys.path, pwd) == 0
-                insert(py.sys.path, int32(0), pwd);
-            end
-            mod = py.importlib.import_module('radar_kod_pokus');
-            py.importlib.reload(mod);
+            % Python Setup
+            %if count(py.sys.path, pwd) == 0
+            %    insert(py.sys.path, int32(0), pwd);
+            %end
             
-            % Initialize Serial Port ONCE
-            try
-                obj.device = serialport("COM6", 9600);
-                configureTerminator(obj.device, "LF");
-                pause(2); % Wait for Arduino to wake up
-                fprintf('Serial connection established on COM6\n');
-            catch
-                warning('Could not connect to Arduino. Check COM6.');
-            end
+            % Serial Initialization
+            %try
+            %    obj.device = serialport("COM6", 9600);
+            %    configureTerminator(obj.device, "LF");
+            %    pause(2); % Wait for Arduino reboot
+            %    fprintf('Connected to Radar Motor.\n');
+            %catch
+            %    warning('Arduino connection failed. Check COM6.');
+            %end
         end
         
-        function runMotor(obj)
-            if isempty(obj.device) || ~isvalid(obj.device)
-                error('Serial device not connected.');
-            end
-            
-            fprintf('Moving motor...\n');
-            write(obj.device, 'M', "char");
-            
-            % Wait for Arduino to send "DONE"
-            readline(obj.device); 
-            
-            % Call capture using the obj prefix
-            obj.runCapture();
-        end
-        
-        function runCapture(obj)
-            cycles = 10;
-            fprintf('Starting radar capture...\n');
-            py.radar_kod_pokus.collect_radar_data(int32(cycles), obj.range1, obj.range2);
-            
-            fprintf('Capture finished. Loading data...\n');
-            obj.hModel.loadData();
-            
-            % Automatically update the view after data is loaded
-            obj.render();
-        end
-        
-        function setModel(obj, hModel), obj.hModel = hModel; end
-        function setView(obj, hView), obj.hView = hView; end
-        
-        function render(obj)
-            obj.hView.range1 = obj.range1;
-            obj.hView.range2 = obj.range2;
-            obj.hView.render(obj.hModel.M);
-        end
+        function runScan(obj, nTimes)
+            %if isempty(obj.device) || ~isvalid(obj.device)
+             %   error('Serial device not connected.');
+            %end
 
-        % Cleanup when the controller is deleted
-        function delete(obj)
-            if ~isempty(obj.device)
-                clear obj.device;
+            % Calculate how many steps to send for each movement
+            stepsToMove = round(obj.stepSizeDeg * obj.stepsPerDeg);
+
+            for i = 1:nTimes
+                fprintf('Cycle %d: Moving %d steps to Angle %d...\n', i, stepsToMove, obj.currentAngle);
+                
+                % 1. Send the number as a string (Arduino parseInt needs this)
+                %writeline(obj.device, num2str(stepsToMove));
+                
+                % 2. Wait for Arduino "DONE"
+                %readline(obj.device); 
+                
+                % 3. Python Capture & Model Update
+                %py.radar_kod_pokus.collect_radar_data(int32(10), 0, 0.6);
+                obj.hModel.loadData();
+                
+                % 4. View Render
+                obj.hView.render(obj.hModel.M, obj.currentAngle);
+                
+                % 5. State Update
+                obj.currentAngle = mod(obj.currentAngle + obj.stepSizeDeg, 360);
+                drawnow; 
+                pause(0.5);
             end
         end
+        
+        function setModel(obj, m), obj.hModel = m; end
+        function setView(obj, v), obj.hView = v; end
     end
 end

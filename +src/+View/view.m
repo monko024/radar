@@ -1,79 +1,110 @@
-classdef view<handle
-    %VIEW Summary of this class goes here
-    %   Detailed explanation goes here
-
+classdef view < handle
     properties
-        range1=0
-        range2=0.6
+        range1 = 0
+        range2 = 0.6
     end
 
     methods
-        function obj=view()
-        
-        end
-        
-        function render(obj,data)
+        function render(obj, data, currentAngle)
+            % Check if data is valid
             if isempty(data)
-                return
+                warning('Data is empty. Skipping render.');
+                return;
             end
 
+            % 1. PERSISTENT FIGURE CHECK
+            fig = findobj('Type', 'figure', 'Tag', 'RadarScanner');
+            if isempty(fig)
+                % Create figure with a dark background to avoid the "white screen"
+                fig = figure('Color', [0.1 0.1 0.1], ...
+                             'Tag', 'RadarScanner', ...
+                             'Name', 'Live Radar Feed', ...
+                             'NumberTitle', 'off');
+                
+                ax = axes('Parent', fig);
+                hold(ax, 'on');
+                axis(ax, 'equal');
+                
+                % Set axis limits based on range2
+                limit = obj.range2 + 0.1;
+                axis(ax, [-limit limit -limit limit]);
+                
+                % Turn off default axis lines but keep the plot area
+                ax.Color = 'none';
+                ax.XColor = 'none';
+                ax.YColor = 'none';
+                
+                obj.drawStaticElements(ax);
+            else
+                ax = findobj(fig, 'Type', 'axes');
+            end
+
+            % 2. ROTATION & COORDINATE CALCULATION
             fov_deg = 60;          
-            max_range = obj.range2;       
-            min_range = obj.range1;
-            
-            % --- DATA PREP ---
+            % Ensure data is processed into a 1D profile
             intensity_profile = max(abs(data), [], 1); 
             num_bins = length(intensity_profile);
             
-            angles = linspace(deg2rad(90 - fov_deg/2), deg2rad(90 + fov_deg/2), 100); 
-            ranges = linspace(min_range, max_range, num_bins);
+            % Calculate angular spread
+            start_angle = currentAngle - (fov_deg / 2);
+            end_angle = currentAngle + (fov_deg / 2);
+            
+            % Convert to radians and adjust 0 deg to North (90 rad)
+            angles = linspace(deg2rad(90 - end_angle), deg2rad(90 - start_angle), 50); 
+            ranges = linspace(obj.range1, obj.range2, num_bins);
+            
             [theta, r] = meshgrid(angles, ranges);
             [X, Y] = pol2cart(theta, r);
-            Z = repmat(intensity_profile', 1, length(angles));
             
-            % --- PLOTTING ---
-            figure('Color', 'w');
-            hold on; axis equal; axis off;
+            % Create Z data for the surf plot
+            % We repeat the intensity profile across all angles in the slice
+            Z_color = repmat(intensity_profile', 1, length(angles));
             
-            % 1. DRAW THE EMPTY BACKGROUND (Darker for contrast)
+            % To ensure the radar data is visible ABOVE the background, we use a small Z offset
+            Z_height = ones(size(Z_color)) * 0.05; 
+            
+            % 3. UPDATE PLOT
+            % We use 'Tag' so we can clear old slices if you want a clean sweep
+            % delete(findobj(ax, 'Tag', 'RadarSlice')); % Uncomment to clear previous step
+            
+            s = surf(ax, X, Y, Z_height, Z_color, ...
+                'EdgeColor', 'none', ...
+                'FaceColor', 'interp', ...
+                'Tag', 'RadarSlice');
+            
+            colormap(ax, parula); 
+            view(ax, 2); % Ensure top-down view
+            
+            % Bring Sensor Icon to front
+            uistack(findobj(ax, 'Tag', 'SensorIcon'), 'top');
+        end
+    end
+
+    methods (Access = private)
+        function drawStaticElements(obj, ax)
+            max_r = obj.range2;
             full_phi = linspace(0, 2*pi, 200);
-            fill(max_range*cos(full_phi), max_range*sin(full_phi), [0.15 0.15 0.15], ...
-                'EdgeColor', [0.3 0.3 0.3], 'LineWidth', 1.5); 
             
-            % 2. PLOT THE MEASUREMENT CONE
-            surf(X, Y, Z, 'EdgeColor', 'none');
-            colormap(parula); 
+            % Draw Background Disk at Z = 0
+            fill3(ax, max_r*cos(full_phi), max_r*sin(full_phi), zeros(1,200), ...
+                  [0.15 0.15 0.15], 'EdgeColor', [0.3 0.3 0.3]); 
             
-            % 3. DRAW DISTANCE RINGS (Full 360°)
-            ring_num=round((obj.range2)/3,1);
-            for ring_r = [ring_num,2*ring_num,3*ring_num]
-                plot(ring_r*cos(full_phi), ring_r*sin(full_phi), ':', 'Color', [0.5 0.5 0.5]);
-                text(0, ring_r + 0.03, [num2str(ring_r) 'm'], 'FontSize', 8, 'Color', 'w', 'Horiz', 'center');
+            % Draw Range Rings
+            ring_steps = linspace(0, max_r, 4);
+            for r_val = ring_steps(2:end)
+                plot3(ax, r_val*cos(full_phi), r_val*sin(full_phi), ones(1,200)*0.01, ...
+                      ':', 'Color', [0.5 0.5 0.5]);
+                text(ax, 0, r_val, 0.02, [num2str(r_val) 'm'], ...
+                     'Color', 'w', 'FontSize', 8, 'Horiz', 'center');
             end
             
-            % 4. DRAW THE CONE BORDERS
-            plot([0, X(end,1)], [0, Y(end,1)], 'w-', 'LineWidth', 1.2);
-            plot([0, X(end,end)], [0, Y(end,end)], 'w-', 'LineWidth', 1.2);
+            % Degree Labels
+            text(ax, 0, max_r + 0.05, 0.02, '0° N', 'Color', 'w', 'FontWeight', 'bold', 'Horiz', 'center');
+            text(ax, max_r + 0.05, 0, 0.02, '90° E', 'Color', 'w', 'FontWeight', 'bold');
             
-            % 5. ADD COMPASS TICKS
-            text(0, max_range + 0.08, '0°', 'FontWeight', 'bold', 'Horiz', 'center');
-            text(0, -max_range - 0.08, '180°', 'FontWeight', 'bold', 'Horiz', 'center');
-            text(max_range + 0.08, 0, '90°', 'FontWeight', 'bold', 'Vert', 'middle');
-            text(-max_range - 0.08, 0, '270°', 'FontWeight', 'bold', 'Vert', 'middle');
-            
-            % 6. RADAR SENSOR ICON
-            plot(0, 0, 'v', 'MarkerFaceColor', 'y', 'MarkerEdgeColor', 'w', 'MarkerSize', 8);
-            
-            % STYLING
-            c = colorbar;
-            c.Label.String = 'Amplitude';
-            title('Top-Down Radar View ', 'FontSize', 14);
-            
-            %view(2);
-            margin = 0.2;
-            xlim([-max_range-margin, max_range+margin]);
-            ylim([-max_range-margin, max_range+margin]);
+            % Sensor Icon (at the center, elevated slightly)
+            plot3(ax, 0, 0, 0.1, 'v', 'MarkerFaceColor', 'y', 'MarkerEdgeColor', 'k', ...
+                  'MarkerSize', 10, 'Tag', 'SensorIcon');
         end
-
     end
 end
