@@ -6,45 +6,76 @@ classdef view < handle
 
     methods
         function render(obj, data, currentAngle)
+            % Check if data is valid
             if isempty(data)
-                return
+                warning('Data is empty. Skipping render.');
+                return;
             end
 
             % 1. PERSISTENT FIGURE CHECK
             fig = findobj('Type', 'figure', 'Tag', 'RadarScanner');
             if isempty(fig)
-                fig = figure('Color', 'w', 'Tag', 'RadarScanner', 'Name', 'Live Radar Feed');
+                % Create figure with a dark background to avoid the "white screen"
+                fig = figure('Color', [0.1 0.1 0.1], ...
+                             'Tag', 'RadarScanner', ...
+                             'Name', 'Live Radar Feed', ...
+                             'NumberTitle', 'off');
+                
                 ax = axes('Parent', fig);
                 hold(ax, 'on');
                 axis(ax, 'equal');
-                axis(ax, 'off');
+                
+                % Set axis limits based on range2
+                limit = obj.range2 + 0.1;
+                axis(ax, [-limit limit -limit limit]);
+                
+                % Turn off default axis lines but keep the plot area
+                ax.Color = 'none';
+                ax.XColor = 'none';
+                ax.YColor = 'none';
+                
                 obj.drawStaticElements(ax);
             else
                 ax = findobj(fig, 'Type', 'axes');
-                hold(ax, 'on'); 
             end
 
             % 2. ROTATION & COORDINATE CALCULATION
             fov_deg = 60;          
+            % Ensure data is processed into a 1D profile
             intensity_profile = max(abs(data), [], 1); 
             num_bins = length(intensity_profile);
             
-            % Offset the angles based on the motor's current position
-            % MATLAB 0 radians is East, so we subtract from 90 to make 0 degrees North
+            % Calculate angular spread
             start_angle = currentAngle - (fov_deg / 2);
             end_angle = currentAngle + (fov_deg / 2);
-            angles = linspace(deg2rad(90 - end_angle), deg2rad(90 - start_angle), 100); 
             
+            % Convert to radians and adjust 0 deg to North (90 rad)
+            angles = linspace(deg2rad(90 - end_angle), deg2rad(90 - start_angle), 50); 
             ranges = linspace(obj.range1, obj.range2, num_bins);
+            
             [theta, r] = meshgrid(angles, ranges);
             [X, Y] = pol2cart(theta, r);
-            Z = repmat(intensity_profile', 1, length(angles));
+            
+            % Create Z data for the surf plot
+            % We repeat the intensity profile across all angles in the slice
+            Z_color = repmat(intensity_profile', 1, length(angles));
+            
+            % To ensure the radar data is visible ABOVE the background, we use a small Z offset
+            Z_height = ones(size(Z_color)) * 0.05; 
             
             % 3. UPDATE PLOT
-            surf(ax, X, Y, Z, 'EdgeColor', 'none');
-            colormap(ax, parula); 
+            % We use 'Tag' so we can clear old slices if you want a clean sweep
+            % delete(findobj(ax, 'Tag', 'RadarSlice')); % Uncomment to clear previous step
             
-            % Maintain layering
+            s = surf(ax, X, Y, Z_height, Z_color, ...
+                'EdgeColor', 'none', ...
+                'FaceColor', 'interp', ...
+                'Tag', 'RadarSlice');
+            
+            colormap(ax, parula); 
+            view(ax, 2); % Ensure top-down view
+            
+            % Bring Sensor Icon to front
             uistack(findobj(ax, 'Tag', 'SensorIcon'), 'top');
         end
     end
@@ -54,20 +85,26 @@ classdef view < handle
             max_r = obj.range2;
             full_phi = linspace(0, 2*pi, 200);
             
-            % Background and Rings
-            fill(ax, max_r*cos(full_phi), max_r*sin(full_phi), [0.15 0.15 0.15], 'EdgeColor', [0.3 0.3 0.3]); 
+            % Draw Background Disk at Z = 0
+            fill3(ax, max_r*cos(full_phi), max_r*sin(full_phi), zeros(1,200), ...
+                  [0.15 0.15 0.15], 'EdgeColor', [0.3 0.3 0.3]); 
+            
+            % Draw Range Rings
             ring_steps = linspace(0, max_r, 4);
             for r_val = ring_steps(2:end)
-                plot(ax, r_val*cos(full_phi), r_val*sin(full_phi), ':', 'Color', [0.5 0.5 0.5]);
-                text(ax, 0, r_val + 0.02, [num2str(r_val) 'm'], 'Color', 'w', 'FontSize', 8, 'Horiz', 'center');
+                plot3(ax, r_val*cos(full_phi), r_val*sin(full_phi), ones(1,200)*0.01, ...
+                      ':', 'Color', [0.5 0.5 0.5]);
+                text(ax, 0, r_val, 0.02, [num2str(r_val) 'm'], ...
+                     'Color', 'w', 'FontSize', 8, 'Horiz', 'center');
             end
             
-            % Compass Labels
-            text(ax, 0, max_r + 0.1, '0°', 'FontWeight', 'bold', 'Horiz', 'center');
-            text(ax, max_r + 0.1, 0, '90°', 'FontWeight', 'bold');
+            % Degree Labels
+            text(ax, 0, max_r + 0.05, 0.02, '0° N', 'Color', 'w', 'FontWeight', 'bold', 'Horiz', 'center');
+            text(ax, max_r + 0.05, 0, 0.02, '90° E', 'Color', 'w', 'FontWeight', 'bold');
             
-            % Sensor Icon
-            plot(ax, 0, 0, 'v', 'MarkerFaceColor', 'y', 'MarkerSize', 8, 'Tag', 'SensorIcon');
+            % Sensor Icon (at the center, elevated slightly)
+            plot3(ax, 0, 0, 0.1, 'v', 'MarkerFaceColor', 'y', 'MarkerEdgeColor', 'k', ...
+                  'MarkerSize', 10, 'Tag', 'SensorIcon');
         end
     end
 end
