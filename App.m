@@ -14,7 +14,7 @@ classdef App < handle
             obj.hController.setView(obj.hView);
             
             % Start the N-times loop (e.g., 18 times for 360 deg if step is 20)
-            obj.hController.runScan(18); 
+            obj.hController.runScan(5); 
         end
     end
 end
