@@ -42,10 +42,11 @@ def radar_init(range1, range2):
     print("Radar ready. Session is live.")
 
 
-def capture_sweeps(num_sweeps):
+def capture_sweeps(num_sweeps, timeout_sec=10.0):
     """
     Call once per scan cycle. Reads num_sweeps frames from the already-live
-    session and saves radar_capture.csv / .xlsx. No connect/disconnect.
+    session. Raises RuntimeError if timeout_sec elapses without completing,
+    so MATLAB's try/catch can skip the cycle instead of hanging forever.
     """
     global _client
 
@@ -54,9 +55,16 @@ def capture_sweeps(num_sweeps):
 
     num_sweeps = int(num_sweeps)
     matrix_list = []
+    deadline = time.time() + timeout_sec
 
     print(f"Starting capture of {num_sweeps} sweeps...")
     for i in range(num_sweeps):
+
+        # Check overall timeout before each sweep
+        if time.time() > deadline:
+            print(f"Timeout reached after {i} sweeps.")
+            raise RuntimeError(f"capture_sweeps timed out after {i}/{num_sweeps} sweeps.")
+
         try:
             info, data = _client.get_next()
             if data is not None:
@@ -70,8 +78,7 @@ def capture_sweeps(num_sweeps):
             break
 
     if len(matrix_list) == 0:
-        print("FAILED: No data collected.")
-        return None
+        raise RuntimeError("No data collected during capture.")
 
     full_matrix = np.array(matrix_list)
     print(f"Capture complete. Matrix shape: {full_matrix.shape}")
@@ -86,8 +93,6 @@ def capture_sweeps(num_sweeps):
 def radar_cleanup():
     """
     Call once at the end. Cleanly stops the session and disconnects.
-    The 'invalid frame' warning during disconnect is expected — the sensor
-    sends one trailing frame after stop_session(), which we drain and ignore.
     """
     global _client, _connected
 
@@ -113,7 +118,6 @@ def radar_cleanup():
     try:
         _client.disconnect()
     except Exception:
-        # Silently force-close — the trailing frame warning is expected here
         try:
             _client._client.close()
         except Exception:
