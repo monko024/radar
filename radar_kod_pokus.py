@@ -1,96 +1,10 @@
 import numpy as np
 import pandas as pd
 from acconeer.exptool import a111
-import serial
 import time
-import subprocess
-import os
-
-def reset_com_port(port='COM3'):
-    """Reset COM port by cycling it through disable/enable"""
-    print(f"Attempting to reset {port}...")
-    
-    try:
-        # Method 1: Use devcon if available (more reliable)
-        devcon_paths = [
-            r"C:\Program Files\Windows Kits\10\Tools\x64\devcon.exe",
-            r"C:\Program Files (x86)\Windows Kits\10\Tools\x64\devcon.exe",
-            r"C:\Program Files\Windows Kits\8.1\Tools\x64\devcon.exe"
-        ]
-        
-        devcon_found = False
-        for devcon_path in devcon_paths:
-            if os.path.exists(devcon_path):
-                print("Using devcon to reset port...")
-                # Find all serial devices
-                result = subprocess.run([devcon_path, 'find', 'USB*'], capture_output=True, text=True)
-                result2 = subprocess.run([devcon_path, 'find', '*COM*'], capture_output=True, text=True)
-                
-                devices = result.stdout.split('\n') + result2.stdout.split('\n')
-                for line in devices:
-                    if port in line and line.strip():
-                        hw_id = line.split(':')[0].strip()
-                        print(f"Found device: {hw_id}")
-                        # Disable and re-enable
-                        subprocess.run([devcon_path, 'disable', hw_id], capture_output=True)
-                        time.sleep(1)
-                        subprocess.run([devcon_path, 'enable', hw_id], capture_output=True)
-                        print(f"Reset {port} using devcon")
-                        time.sleep(2)
-                        devcon_found = True
-                        break
-                
-                if devcon_found:
-                    break
-        
-        if not devcon_found:
-            # Method 2: Use pnputil (built-in Windows tool)
-            print("Using pnputil to reset port...")
-            subprocess.run(['pnputil.exe', '/enum-devices'], capture_output=True)
-            time.sleep(1)
-            
-            # Try to restart the serial service
-            try:
-                subprocess.run(['net', 'stop', 'serial'], capture_output=True)
-                time.sleep(1)
-                subprocess.run(['net', 'start', 'serial'], capture_output=True)
-                time.sleep(1)
-            except:
-                pass
-                
-            print(f"Reset attempt completed for {port}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Port reset failed: {e}")
-        return False
-
-def check_com_port(port='COM3'):
-    """Check if COM port is accessible before attempting connection"""
-    try:
-        test_serial = serial.Serial(port, timeout=1)
-        test_serial.close()
-        print(f"Port {port} is accessible")
-        return True
-    except Exception as e:
-        print(f"Port {port} is not accessible: {e}")
-        return False
 
 def collect_radar_data(num_sweeps,range1,range2):
     num_sweeps = int(num_sweeps)
-
-    # Check COM port accessibility first
-    if not check_com_port('COM3'):
-        print("Port not accessible, attempting reset...")
-        if not reset_com_port('COM3'):
-            print("ERROR: Cannot reset COM3. Check port availability and permissions.")
-            return None
-        
-        # Check again after reset
-        if not check_com_port('COM3'):
-            print("ERROR: COM3 still not accessible after reset.")
-            return None
 
     # Ensure COM port is correct. If you moved the USB, it might be COM4, COM5, etc.
     client = a111.Client(serial_port='COM3', protocol=a111.Protocol.MODULE)
