@@ -11,25 +11,25 @@ classdef controller < handle
     methods
         function obj = controller()
             % Python Setup
-            %if count(py.sys.path, pwd) == 0
-            %    insert(py.sys.path, int32(0), pwd);
-            %end
+            if count(py.sys.path, pwd) == 0
+                insert(py.sys.path, int32(0), pwd);
+            end
             
             % Serial Initialization
-            %try
-            %    obj.device = serialport("COM6", 9600);
-            %    configureTerminator(obj.device, "LF");
-            %    pause(2); % Wait for Arduino reboot
-            %    fprintf('Connected to Radar Motor.\n');
-            %catch
-            %    warning('Arduino connection failed. Check COM6.');
-            %end
+            try
+                obj.device = serialport("COM6", 9600);
+                configureTerminator(obj.device, "LF");
+                pause(2); % Wait for Arduino reboot
+                fprintf('Connected to Radar Motor.\n');
+            catch
+                warning('Arduino connection failed. Check COM6.');
+            end
         end
         
         function runScan(obj, nTimes)
-            %if isempty(obj.device) || ~isvalid(obj.device)
-             %   error('Serial device not connected.');
-            %end
+            if isempty(obj.device) || ~isvalid(obj.device)
+               error('Serial device not connected.');
+            end
 
             % Calculate how many steps to send for each movement
             stepsToMove = round(obj.stepSizeDeg * obj.stepsPerDeg);
@@ -38,13 +38,13 @@ classdef controller < handle
                 fprintf('Cycle %d: Moving %d steps to Angle %d...\n', i, stepsToMove, obj.currentAngle);
                 
                 % 1. Send the number as a string (Arduino parseInt needs this)
-                %writeline(obj.device, num2str(stepsToMove));
+                writeline(obj.device, num2str(stepsToMove));
                 
                 % 2. Wait for Arduino "DONE"
-                %readline(obj.device); 
+                readline(obj.device); 
                 
                 % 3. Python Capture & Model Update
-                %py.radar_kod_pokus.collect_radar_data(int32(10), 0, 0.6);
+                py.radar_kod_pokus.collect_radar_data(int32(10), 0, 2);
                 obj.hModel.loadData();
                 
                 % 4. View Render

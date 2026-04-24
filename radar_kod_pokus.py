@@ -7,10 +7,12 @@ def collect_radar_data(num_sweeps,range1,range2):
 
     # Ensure COM port is correct. If you moved the USB, it might be COM4, COM5, etc.
     client = a111.Client(serial_port='COM3', protocol=a111.Protocol.MODULE)
+    connected = False
     
     try:
         print("Connecting to sensor...")
         client.connect()
+        connected = True
         
         config = a111.EnvelopeServiceConfig()
         config.range_interval = [range1, range2] #set measured distance
@@ -60,5 +62,6 @@ def collect_radar_data(num_sweeps,range1,range2):
 
     finally:
         print("Disconnecting sensor...")
-        client.disconnect()
+        if connected:
+            client.disconnect()
 
