@@ -1,18 +1,45 @@
 import numpy as np
 import pandas as pd
-from acconeer.exptool import a111
 import time
+from acconeer.exptool import a111
 
-def collect_radar_data(num_sweeps,range1,range2):
+
+def _safe_disconnect(client):
+    """Stop session and drain any in-flight frames before disconnecting."""
+    try:
+        client.stop_session()
+    except Exception:
+        pass
+
+    # Drain any frames the sensor pushed after stop_session()
+    # so disconnect() doesn't see a corrupt/unexpected frame
+    for _ in range(5):
+        try:
+            client.get_next()
+        except Exception:
+            break  # No more frames — safe to disconnect now
+
+    time.sleep(0.3)
+
+    try:
+        client.disconnect()
+    except Exception as e:
+        # Last-resort: force-close the underlying socket/serial
+        print(f"Warning: clean disconnect failed ({e}), forcing close.")
+        try:
+            client._client.close()
+        except Exception:
+            pass
+
+
+def collect_radar_data(num_sweeps, range1, range2):
     num_sweeps = int(num_sweeps)
 
-    # Ensure COM port is correct. If you moved the USB, it might be COM4, COM5, etc.
     client = a111.Client(serial_port='COM3', protocol=a111.Protocol.MODULE)
     connected = False
-    
+
     try:
         print("Connecting to sensor...")
-        # Retry connection with delays
         for attempt in range(3):
             try:
                 client.connect()
@@ -26,25 +53,24 @@ def collect_radar_data(num_sweeps,range1,range2):
                     time.sleep(2)
                 else:
                     raise conn_e
-        
+
         config = a111.EnvelopeServiceConfig()
-        config.range_interval = [range1, range2] #set measured distance
-        config.update_rate = 30  # Added: explicitly set a rate (Hz)
-        
+        config.range_interval = [range1, range2]
+        config.update_rate = 30
+
         print("Setting up session...")
         client.setup_session(config)
         client.start_session()
 
         matrix_list = []
         print(f"Starting capture of {num_sweeps} sweeps...")
-        
+
         for i in range(num_sweeps):
             try:
-                # Add a timeout check
                 info, data = client.get_next()
                 if data is not None:
                     matrix_list.append(data)
-                    if i % 5 == 0: # Print every 5th sweep to show progress
+                    if i % 5 == 0:
                         print(f"Captured sweep {i}...")
                 else:
                     print(f"Warning: Sweep {i} returned no data.")
@@ -59,13 +85,10 @@ def collect_radar_data(num_sweeps,range1,range2):
         full_matrix = np.array(matrix_list)
         print(f"Capture complete. Matrix shape: {full_matrix.shape}")
 
-        # Exporting
         np.savetxt("radar_capture.csv", full_matrix, delimiter=",")
-        # Optimization: pandas can be slow for large radar files, 
-        # but for small captures it is fine.
         df = pd.DataFrame(full_matrix)
         df.to_excel("radar_capture.xlsx", index=False)
-        
+
         print("Success! Files saved: radar_capture.csv and radar_capture.xlsx")
         return full_matrix
 
@@ -74,17 +97,6 @@ def collect_radar_data(num_sweeps,range1,range2):
         return None
 
     finally:
-        print("Disconnecting sensor...")
         if connected:
-            import time
-            time.sleep(0.5)  # Brief pause before disconnect
-            try:
-                client.disconnect()
-            except Exception as e:
-                print(f"Warning: Error during disconnect: {e}")
-                # Force close if needed
-                try:
-                    client._client.close()
-                except:
-                    pass
-
+            print("Disconnecting sensor...")
+            _safe_disconnect(client)
