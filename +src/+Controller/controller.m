@@ -6,25 +6,23 @@ classdef controller < handle
         currentAngle = 0
         stepSizeDeg = 20
         stepsPerDeg = 5.5
-        serialTimeoutSec = 15  % Max seconds to wait for Arduino "DONE"
+        serialTimeoutSec = 5  % Reduced timeout for better responsiveness
     end
 
     methods
         function obj = controller()
-            % Python Setup
             if count(py.sys.path, pwd) == 0
                 insert(py.sys.path, int32(0), pwd);
             end
 
-            % Serial Initialization
             try
                 obj.device = serialport("COM6", 9600);
                 configureTerminator(obj.device, "LF");
                 obj.device.Timeout = obj.serialTimeoutSec;
-                pause(2); % Wait for Arduino reboot
-                fprintf('Connected to Radar Motor.\n');
+                pause(2); 
+                fprintf('Connected to Arduino.\n');
             catch
-                warning('Arduino connection failed. Check COM6.');
+                warning('Arduino connection failed.');
             end
         end
 
@@ -34,56 +32,47 @@ classdef controller < handle
             end
 
             stepsToMove = round(obj.stepSizeDeg * obj.stepsPerDeg);
-
-            % Initialize radar ONCE before the loop
             fprintf('Initializing radar...\n');
-            py.radar_kod_pokus.radar_init(0, 2);
-            fprintf('Radar initialized. Starting scan.\n');
+            py.radar_kod_pokus.radar_init(0.2, 1);
 
             try
                 for i = 1:nTimes
-                    fprintf('Cycle %d: Moving %d steps to Angle %d...\n', i, stepsToMove, obj.currentAngle);
+                    fprintf('\n--- Cycle %d ---\n', i);
 
-                    % 1. Send step count to Arduino
+                    % 1. Command Arduino
+                    fprintf('Motor: Moving %d steps...\n', stepsToMove);
                     writeline(obj.device, num2str(stepsToMove));
 
-                    % 2. Wait for Arduino "DONE" — with timeout
+                    % 2. Wait for Arduino
                     response = obj.waitForDone();
                     if isempty(response)
-                        warning('Cycle %d: Timed out waiting for Arduino. Skipping cycle.', i);
-                        obj.currentAngle = mod(obj.currentAngle + obj.stepSizeDeg, 360);
+                        fprintf('Warning: Arduino response timed out. Skipping.\n');
                         continue;
                     end
 
-                    % 3. Brief settle pause after motor stops
-                    pause(0.5);
-
-                    % 4. Capture — with timeout guard
+                    % 3. Radar Capture (Python)
+                    fprintf('Radar: Capturing...\n');
                     try
                         py.radar_kod_pokus.capture_sweeps(int32(10));
+                        pause(0.1); % Small buffer for file writing
                         obj.hModel.loadData();
                     catch ME
-                        warning('Cycle %d: Radar capture failed: %s. Skipping render.', i, ME.message);
-                        obj.currentAngle = mod(obj.currentAngle + obj.stepSizeDeg, 360);
+                        fprintf('Radar Error: %s\n', ME.message);
                         continue;
                     end
 
-                    % 5. Render
+                    % 4. Render
                     obj.hView.render(obj.hModel.M, obj.currentAngle);
-
-                    % 6. Advance angle
+                    
                     obj.currentAngle = mod(obj.currentAngle + obj.stepSizeDeg, 360);
                     drawnow;
                 end
-
             catch ME
-                fprintf('Error during scan: %s\n', ME.message);
+                fprintf('Global Error: %s\n', ME.message);
             end
 
-            % Cleanup radar once after the loop
-            fprintf('Cleaning up radar...\n');
             py.radar_kod_pokus.radar_cleanup();
-            fprintf('Done.\n');
+            fprintf('Scan Finished.\n');
         end
 
         function setModel(obj, m), obj.hModel = m; end
@@ -92,18 +81,17 @@ classdef controller < handle
 
     methods (Access = private)
         function response = waitForDone(obj)
-            % Non-blocking poll for Arduino response, respects Timeout property
             response = '';
             deadline = tic;
             while toc(deadline) < obj.serialTimeoutSec
                 if obj.device.NumBytesAvailable > 0
                     response = readline(obj.device);
+                    fprintf('Arduino: %s\n', response);
                     return;
                 end
-                pause(0.05); % Poll every 50ms instead of blocking
+                pause(0.05);
             end
-            % Timed out — flush buffer and return empty
-            flush(obj.device);
+            flush(obj.device); 
         end
     end
 end

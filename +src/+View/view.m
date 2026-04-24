@@ -1,7 +1,7 @@
 classdef view < handle
     properties
-        range1 = 0
-        range2 = 2
+        range1 = 0.2
+        range2 = 1
     end
 
     methods
