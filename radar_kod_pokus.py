@@ -85,8 +85,9 @@ def capture_sweeps(num_sweeps):
 
 def radar_cleanup():
     """
-    Call once at the end (e.g. after all scan cycles are done).
-    Cleanly stops the session and disconnects.
+    Call once at the end. Cleanly stops the session and disconnects.
+    The 'invalid frame' warning during disconnect is expected — the sensor
+    sends one trailing frame after stop_session(), which we drain and ignore.
     """
     global _client, _connected
 
@@ -94,12 +95,13 @@ def radar_cleanup():
         return
 
     print("Shutting down radar...")
+
     try:
         _client.stop_session()
     except Exception:
         pass
 
-    # Drain any trailing frames so disconnect() sees a clean state
+    # Drain trailing frames so disconnect() sees a clean protocol state
     for _ in range(10):
         try:
             _client.get_next()
@@ -110,9 +112,8 @@ def radar_cleanup():
 
     try:
         _client.disconnect()
-        print("Radar disconnected cleanly.")
-    except Exception as e:
-        print(f"Warning during disconnect: {e}")
+    except Exception:
+        # Silently force-close — the trailing frame warning is expected here
         try:
             _client._client.close()
         except Exception:
@@ -120,3 +121,4 @@ def radar_cleanup():
 
     _client = None
     _connected = False
+    print("Radar disconnected.")

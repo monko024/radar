@@ -65,7 +65,7 @@ classdef view < handle
             
             % 3. UPDATE PLOT
             % We use 'Tag' so we can clear old slices if you want a clean sweep
-            delete(findobj(ax, 'Tag', 'RadarSlice')); % Uncomment to clear previous step
+            %delete(findobj(ax, 'Tag', 'RadarSlice')); % Uncomment to clear previous step
             
             s = surf(ax, X, Y, Z_height, Z_color, ...
                 'EdgeColor', 'none', ...
