@@ -1,102 +1,83 @@
 import numpy as np
-import pandas as pd
 import time
+import os
 from acconeer.exptool import a111
 
+_client = None
+_connected = False
 
-def _safe_disconnect(client):
-    """Stop session and drain any in-flight frames before disconnecting."""
-    try:
-        client.stop_session()
-    except Exception:
-        pass
-
-    # Drain any frames the sensor pushed after stop_session()
-    # so disconnect() doesn't see a corrupt/unexpected frame
-    for _ in range(5):
+def radar_init(range1, range2):
+    global _client, _connected
+    
+    # --- NEW: Clear existing CSV file at startup ---
+    if os.path.exists("radar_capture.csv"):
         try:
-            client.get_next()
-        except Exception:
-            break  # No more frames — safe to disconnect now
+            os.remove("radar_capture.csv")
+            print("Existing radar_capture.csv cleared.")
+        except Exception as e:
+            print(f"Note: Could not delete old CSV: {e}")
 
-    time.sleep(0.3)
-
+    print(f"Attempting to connect to Acconeer on COM3...")
+    _client = a111.Client(serial_port='COM3', protocol=a111.Protocol.MODULE)
+    
     try:
-        client.disconnect()
-    except Exception as e:
-        # Last-resort: force-close the underlying socket/serial
-        print(f"Warning: clean disconnect failed ({e}), forcing close.")
-        try:
-            client._client.close()
-        except Exception:
-            pass
-
-
-def collect_radar_data(num_sweeps, range1, range2):
-    num_sweeps = int(num_sweeps)
-
-    client = a111.Client(serial_port='COM3', protocol=a111.Protocol.MODULE)
-    connected = False
-
-    try:
-        print("Connecting to sensor...")
-        for attempt in range(3):
-            try:
-                client.connect()
-                connected = True
-                print("Sensor connected successfully")
-                break
-            except Exception as conn_e:
-                print(f"Connection attempt {attempt+1} failed: {conn_e}")
-                if attempt < 2:
-                    print("Retrying in 2 seconds...")
-                    time.sleep(2)
-                else:
-                    raise conn_e
-
+        _client.connect()
+        _connected = True
+        
         config = a111.EnvelopeServiceConfig()
         config.range_interval = [range1, range2]
         config.update_rate = 30
-
-        print("Setting up session...")
-        client.setup_session(config)
-        client.start_session()
-
-        matrix_list = []
-        print(f"Starting capture of {num_sweeps} sweeps...")
-
-        for i in range(num_sweeps):
-            try:
-                info, data = client.get_next()
-                if data is not None:
-                    matrix_list.append(data)
-                    if i % 5 == 0:
-                        print(f"Captured sweep {i}...")
-                else:
-                    print(f"Warning: Sweep {i} returned no data.")
-            except Exception as e:
-                print(f"Error during capture at sweep {i}: {e}")
-                break
-
-        if len(matrix_list) == 0:
-            print("FAILED: No data was collected. Check sensor connection.")
-            return None
-
-        full_matrix = np.array(matrix_list)
-        print(f"Capture complete. Matrix shape: {full_matrix.shape}")
-
-        np.savetxt("radar_capture.csv", full_matrix, delimiter=",")
-        df = pd.DataFrame(full_matrix)
-        df.to_excel("radar_capture.xlsx", index=False)
-
-        print("Success! Files saved: radar_capture.csv and radar_capture.xlsx")
-        return full_matrix
-
+        
+        _client.setup_session(config)
+        _client.start_session()
+        print("Radar ready.")
     except Exception as e:
-        print(f"Critical Error: {e}")
-        return None
+        _connected = False
+        print(f"Init failed: {e}")
+        _client = None 
+        raise
 
-    finally:
-        if connected:
-            print("Disconnecting sensor...")
-            _safe_disconnect(client)
+def capture_sweeps(num_sweeps, timeout_sec=10.0):
+    global _client
+    if _client is None or not _connected:
+        raise RuntimeError("Radar not initialised.")
+
+    # --- STEP 3 IMPLEMENTATION: Clear stale buffer ---
+    # Discard any frames that accumulated while the motor was moving
+    for _ in range(5): 
+        try:
+            _client.get_next()
+        except:
+            break
+
+    matrix_list = []
+    deadline = time.time() + timeout_sec
+
+    for i in range(int(num_sweeps)):
+        if time.time() > deadline:
+            raise RuntimeError("Capture timed out.")
+
+        info, data = _client.get_next()
+        if data is not None:
+            matrix_list.append(data)
+
+    if not matrix_list:
+        raise RuntimeError("No data collected.")
+
+    full_matrix = np.array(matrix_list)
+    
+    # --- STEP 2 IMPLEMENTATION: Remove Excel saving ---
+    # Only save CSV for MATLAB to keep the loop fast
+    np.savetxt("radar_capture.csv", full_matrix, delimiter=",")
+    return full_matrix
+
+def radar_cleanup():
+    global _client, _connected
+    if _client:
+        try:
+            _client.stop_session()
+            _client.disconnect()
+        except:
+            pass
+    _client = None
+    _connected = False
