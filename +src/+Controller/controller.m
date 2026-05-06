@@ -23,32 +23,26 @@ classdef controller < handle
             stepsToMove = round(obj.stepSizeDeg * obj.stepsPerDeg);
             
             for i = 1:nTimes
-                % Move motor
                 flush(obj.device);
                 writeline(obj.device, num2str(stepsToMove));
                 
-                % Fast Wait
                 tic;
                 while obj.device.NumBytesAvailable == 0 && toc < 2
                     pause(0.01); 
                 end
                 readline(obj.device); 
 
-                % Radar Capture
                 try
                     pyData = py.radar_kod_pokus.capture_sweeps(int32(5));
                     M = double(pyData);
                     if ~isempty(M)
                         obj.hModel.setData(M);
-                        
-                        % --- FIX: Pass stepSizeDeg to the View ---
-                        obj.hView.render(obj.hModel.M, obj.currentAngle, obj.stepSizeDeg);
+                        obj.hView.render(obj.hModel.M, obj.currentAngle);
                     end
                 catch ME
                     fprintf('Radar Error: %s\n', ME.message);
                 end
 
-                % Increment angle
                 obj.currentAngle = mod(obj.currentAngle + obj.stepSizeDeg, 360);
                 drawnow limitrate;
             end

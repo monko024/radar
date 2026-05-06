@@ -11,9 +11,8 @@ classdef view < handle
             obj.range2 = r2;
         end
 
-        function render(obj, data, currentAngle, stepAngle, ax)
-            % Sync axes handle
-            if nargin > 4 && ~isempty(ax), obj.axHandle = ax; end
+        function render(obj, data, currentAngle, ax)
+            if nargin > 3 && ~isempty(ax), obj.axHandle = ax; end
             if isempty(obj.axHandle) || ~isvalid(obj.axHandle), return; end
             
             targetAx = obj.axHandle;
@@ -23,33 +22,29 @@ classdef view < handle
             if isempty(data)
                 slices = findobj(targetAx, 'Tag', 'RadarSlice');
                 if ~isempty(slices), delete(slices); end
+                
                 if isempty(findobj(targetAx, 'Tag', 'SensorIcon'))
                     obj.drawStaticElements(targetAx);
                 end
                 return;
             end
 
-            % DYNAMIC CONE WIDTH CALCULATION
-            % Instead of +/- 10 degrees, we use half of the step angle 
-            % to ensure the slices touch perfectly without overlapping or gaps.
+            % DRAWING LOGIC
             num_sweeps = size(data, 1);
             num_bins   = size(data, 2);
             r = linspace(obj.range1, obj.range2, num_bins);
             
-            % Center the cone on currentAngle and spread it by stepAngle
-            half_step = stepAngle / 2;
-            theta_deg = linspace(currentAngle - half_step, currentAngle + half_step, num_sweeps);
-            theta_rad = deg2rad(theta_deg);
+            % --- FIX: 60 DEGREE WIDE CONE ---
+            % Centered at currentAngle, spread is +/- 30 degrees
+            theta_rad = deg2rad(linspace(currentAngle - 30, currentAngle + 30, num_sweeps));
             
             [THETA, R] = meshgrid(theta_rad, r);
             X = R .* cos(THETA);
             Y = R .* sin(THETA);
 
-            % Plotting at Z=0 for 2D look
             h = surf(targetAx, X, Y, zeros(size(X)), data', ...
                  'EdgeColor', 'none', 'FaceColor', 'interp', 'Tag', 'RadarSlice');
             
-            % Ensure layers stay correct
             if isempty(findobj(targetAx, 'Tag', 'SensorIcon'))
                 obj.drawStaticElements(targetAx);
             end
@@ -63,23 +58,16 @@ classdef view < handle
             cla(ax);
             hold(ax, 'on');
             max_r = obj.range2;
-            phi = linspace(0, 2*pi, 150);
+            phi = linspace(0, 2*pi, 100);
             
-            % Draw range rings
-            ring_vals = linspace(0, max_r, 4);
-            for r_val = ring_vals(2:end)
-                plot3(ax, r_val*cos(phi), r_val*sin(phi), ones(size(phi))*0.1, ...
-                    ':', 'Color', [0.4 0.4 0.4], 'LineWidth', 0.5);
-                text(ax, r_val*cos(pi/4), r_val*sin(pi/4), 0.2, [num2str(r_val) 'm'], ...
-                    'Color', 'w', 'FontSize', 7);
+            for r_val = linspace(0, max_r, 4)
+                plot3(ax, r_val*cos(phi), r_val*sin(phi), ones(1,100)*0.1, ':', 'Color', [0.4 0.4 0.4]);
             end
             
-            % Center point
-            plot3(ax, 0, 0, 0.5, 'wo', 'MarkerFaceColor', 'r', 'MarkerSize', 6, 'Tag', 'SensorIcon');
+            plot3(ax, 0, 0, 0.5, 'wo', 'MarkerFaceColor', 'r', 'Tag', 'SensorIcon');
             
             axis(ax, 'equal');
-            limit = max_r + 0.1;
-            axis(ax, [-limit limit -limit limit]);
+            axis(ax, [-max_r-0.1 max_r+0.1 -max_r-0.1 max_r+0.1]);
             ax.Color = 'none'; ax.XColor = 'none'; ax.YColor = 'none';
             view(ax, 2);
         end

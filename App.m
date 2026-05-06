@@ -8,7 +8,6 @@ classdef App < handle
     
     methods
         function obj = App()
-            % GUI Construction
             obj.UIFigure = uifigure('Name', 'Radar Scanner Control', 'Color', [0.15 0.15 0.15]);
             obj.UIFigure.Position = [100 100 950 550];
             obj.GridLayout = uigridlayout(obj.UIFigure, [1, 2]);
@@ -38,15 +37,13 @@ classdef App < handle
             obj.RightPanel = uipanel(obj.GridLayout, 'BackgroundColor', [0.1 0.1 0.1], 'BorderType', 'none');
             obj.UIAxes = uiaxes(obj.RightPanel, 'Position', [10 10 600 500], 'Color', 'none');
             
-            % Init Classes
-            obj.hModel = src.Model.model();
-            obj.hView = src.View.view(); 
-            obj.hController = src.Controller.controller();
+            obj.hModel = model();
+            obj.hView = view(); 
+            obj.hController = controller();
             obj.hController.setModel(obj.hModel);
             obj.hController.setView(obj.hView);
             
-            % Initial blank render
-            obj.hView.render([], 0, 20, obj.UIAxes);
+            obj.hView.render([], 0, obj.UIAxes);
         end
         
         function startScan(obj)
@@ -54,7 +51,6 @@ classdef App < handle
             obj.RunButton.Text = 'Scanning...';
             drawnow;
             try
-                % Sync GUI to logic
                 obj.hView.setRange(obj.RangeStartEdit.Value, obj.RangeEndEdit.Value);
                 obj.hController.stepSizeDeg = obj.AngleStepEdit.Value;
                 obj.hController.currentAngle = 0; 
@@ -71,8 +67,7 @@ classdef App < handle
         end
         
         function clearDisplay(obj)
-            % Clear visuals (using dummy angle and step)
-            obj.hView.render([], 0, 20, obj.UIAxes);
+            obj.hView.render([], 0, obj.UIAxes);
             obj.hController.currentAngle = 0;
         end
     end
